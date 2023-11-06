@@ -92,7 +92,7 @@ def modulate_image(frame, center, radius, bit, energy):
         energy = np.random.uniform(energy - 3, energy + 3)
         mask=  np.array(energy*create_mask(radius, 
                                            radius/np.sqrt(2*np.log(radius))))[..., np.newaxis].repeat(3, axis=2)
-        color_contributions = np.array([0.7, 0.4, 0.7])
+        color_contributions = np.array([0.6, 0.6, 0.5]) # B G R
         result = (mask * color_contributions).astype(np.uint8)      
         frame[centro_x-radius:centro_x+radius + 1, centro_y-radius:centro_y + radius + 1, :] += result
 
@@ -203,7 +203,7 @@ def create_YoLo_file(transmitters, radius, width, height, output_file):
             box_height = radius[i] / height  # Normalizing box height
             file.write(f"0 {x_center:.6f} {y_center:.6f} {box_width:.6f} {box_height:.6f}\n")
 
-def store_pixels(transmitters, non_transmitters):
+def store_pixels(transmitters, non_transmitters, output_file):
     """
     Store pixels positions of selected transmitters and non transmitters
     
@@ -214,7 +214,7 @@ def store_pixels(transmitters, non_transmitters):
     Returns:
         None
     """
-    with open("pixels.txt", 'w') as file:
+    with open(output_file, 'w') as file:
         for coordinates in transmitters:
             file.write(f"T, {coordinates[0]}, {coordinates[1]}\n")
         for coordinates in non_transmitters:
@@ -272,7 +272,7 @@ def main():
             # If it's the first frame of the video, collect information
             if not info_collected:
                 tx_centers, radius, energy, non_tx_centers = get_info(frame)
-                store_pixels(tx_centers, non_tx_centers)
+                store_pixels(tx_centers, non_tx_centers, f'data/{i}/pixels.txt')
                 info_collected = True
 
             # If a frame has already been represented (frame number multiple of 60)
