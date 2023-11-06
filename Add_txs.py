@@ -16,6 +16,10 @@ import numpy as np
 import pandas as pd
 import random
 from matplotlib import pyplot as plt
+import os
+
+bit_duration = 0.13333  # Duración de un bit en segundos
+frame_duration = 2  # Duración de una trama en segundos
 
 
 def generate_frame_bits():
@@ -35,6 +39,10 @@ def generate_frame_bits():
     Returns:
         np.array: A NumPy array representing a data frame with a shape of (1x15).
     """
+    frame_bits = [1] * 5 + [0] + random.choices([0, 1], k=4) + [0] + random.choices([0, 1], k=4)
+
+    return frame_bits
+
 
      
 
@@ -51,9 +59,19 @@ def create_mask(radius, std):
     Returns:
         np.array: A NumPy array representing the 2D Gaussian mask(radiusxradius).
     """
+    x = np.linspace(-radius, radius, num=radius*2 + 1)
+    y = np.linspace(-radius, radius, num=radius*2 + 1)
+    X, Y = np.meshgrid(x, y)
+    
+    R2 = X**2.0 + Y**2.0
+    
+    profile = np.exp(-R2/2/std**2)
+
+    return profile
 
 
-def modulate_image(frame, center, radius, bit, intensity_fix):
+
+def modulate_image(frame, center, radius, bit, energy):
    """
     Modulates a luminous region in a video frame according to the bit.
 
@@ -69,18 +87,121 @@ def modulate_image(frame, center, radius, bit, intensity_fix):
     Returns:
         None
     """
+   if bit == 1:       
+        centro_x, centro_y = center
+        energy = np.random.uniform(energy - 3, energy + 3)
+        mask=  np.array(energy*create_mask(radius, 
+                                           radius/np.sqrt(2*np.log(radius))))[..., np.newaxis].repeat(3, axis=2)
+        color_contributions = np.array([0.7, 0.4, 0.7])
+        result = (mask * color_contributions).astype(np.uint8)      
+        frame[centro_x-radius:centro_x+radius + 1, centro_y-radius:centro_y + radius + 1, :] += result
+
+def get_info(frame):
+    """
+    Obtains the necessary information to locate the transmitters: pixels, radius, and luminous intensity.
+    Also gets the position of points not associated to transmitters that are desired to be stored for further study.
+    
+    Args:
+        frame (np.array): Image to display for selecting transmitters.
+
+    Returns:
+        tx_centers (np.array): Numpy array containing pairs (x, y) associated with the transmitter locations.
+        radius (np.array): Numpy array of integers indicating the luminous radius of each of the transmitters.
+        energy (np.array): Numpy array containing integers associated with the luminous increment contributed by
+        the transmitter to the image.
+        non_tx_centers (np.array): Numpy array containing pairs (x, y) associated with the locations of the
+        non-transmitters to be studied in post-processing.
+    """
+    tx_centers = []
+    radius = []
+    energy = []
+    non_tx_centers = []
+    
+    ##########################  SELECT TX CENTERS ####################################
+    print("Select transmitter points on the image by clicking. Press Enter to finish.")
+    img = frame.copy()
+    cv2.imshow("Image", img)
+
+    points = []
+    cv2.setMouseCallback("Image", click_event)
+
+    while True:
+        key = cv2.waitKey(1)
+        if key == 13:  # Press "Enter" to finish the selection
+            break
+
+    cv2.destroyWindow("Image")
+    tx_centers = np.array(points)
+    
+    ##########################  SELECT TX RADIUS ####################################
+    for _ in tx_centers:
+        x = input("Enter the radius for the next transmitter (or press Enter to finish): ")
+        if not x:
+            break
+        radius.append(int(x))
+
+    ##########################  SELECT TX ENERGY ####################################
+    for _ in tx_centers:
+        x = input("Enter the energy value for the next transmitter (or press Enter to finish): ")
+        if not x:
+            break
+        energy.append(int(x))
+    
+    ##########################  SELECT NO TX CENTERS ####################################
+    print("Select non-transmitter points. Press Enter to finish.")
+    img = frame.copy()
+    cv2.imshow("Image", img)
+    cv2.waitKey(0)
+    cv2.destroyWindow("Image")
+
+    while True:
+        x = input("Enter the x-coordinate of a non-transmitter (or press Enter to finish): ")
+        if not x:
+            break
+        y = input("Enter the y-coordinate of the corresponding non-transmitter: ")
+        non_tx_centers.append([int(x), int(y)])
+
+    return tx_centers, radius, energy, non_tx_centers
+
+def click_event(event, x, y, flags, param):
+    """
+    Handle mouse click events for selecting points.
+
+    Args:
+        event (int): The type of mouse event (e.g., cv2.EVENT_LBUTTONDOWN).
+        x (int): The x-coordinate of the clicked point.
+        y (int): The y-coordinate of the clicked point.
+        flags (int): Additional flags for the mouse event.
+        param (object): Additional parameter passed to the function.
+
+    Returns:
+        None
+    """
+    global points
+    if event == cv2.EVENT_LBUTTONDOWN:
+        points.append([x, y])  
    
-def create_YoLo_file(transmitters, radius):
+def create_YoLo_file(transmitters, radius, width, height, output_file):
     """
     Get and store transmitters boxes in YoLo format.
     
     Args:
         transmitters(np.array): List of (x,y) coordinates of selected transmitters.
         radius(np.array): Wrotten radius for each transmitter.
+        width(int): Width of the image.
+        height(int): Height of the image.
+        output_file(str): Name of the output file.
 
     Returns:
         None
     """
+    with open(output_file, 'w') as file:
+        for i in range(len(transmitters)):
+            x_center = transmitters[i][0] / width  # Normalizing x-coordinate
+            y_center = transmitters[i][1] / height  # Normalizing y-coordinate
+            box_width = radius[i] / width  # Normalizing box width
+            box_height = radius[i] / height  # Normalizing box height
+            file.write(f"0 {x_center:.6f} {y_center:.6f} {box_width:.6f} {box_height:.6f}\n")
 
 def store_pixels(transmitters, non_transmitters):
     """
@@ -93,6 +214,12 @@ def store_pixels(transmitters, non_transmitters):
     Returns:
         None
     """
+    with open("pixels.txt", 'w') as file:
+        for coordinates in transmitters:
+            file.write(f"T, {coordinates[0]}, {coordinates[1]}\n")
+        for coordinates in non_transmitters:
+            file.write(f"NT, {coordinates[0]}, {coordinates[1]}\n")
+
 
 
 def main():
@@ -106,6 +233,79 @@ def main():
     Generates and store random data frames for each transmitter and modifies  
     the images to represent those data frames in the specified positions and sizes.
     """
+    # Loop through directories
+    for i in range(1, 20):
+        input_path = f'data/{i}' 
+        input_video_file = os.path.join(input_path, 'video.mp4')
+        
+        # Open the video file
+        cap = cv2.VideoCapture(input_video_file)
+        
+        # Get video properties
+        frame_width = int(cap.get(3))
+        frame_height = int(cap.get(4))
+        total_video_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+
+        # Create VideoWriter object for saving the output video
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        output_path = f'data/{i}/out_video.mp4' 
+        out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
+
+        # Calculate the number of frames per bit and frame duration
+        number_bit_duration = round(bit_duration/(1/fps))
+        number_frame_duration = round(frame_duration/(1/fps))
+
+        # Initialize flag to display the message only once
+        info_collected = False
+
+        # Control parameters for progress
+        frame_number = 0
+        frame_number_bit_count = 0
+
+        while frame_number < total_video_frames:
+            # Extract frames from the video
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            # If it's the first frame of the video, collect information
+            if not info_collected:
+                tx_centers, radius, energy, non_tx_centers = get_info(frame)
+                store_pixels(tx_centers, non_tx_centers)
+                info_collected = True
+
+            # If a frame has already been represented (frame number multiple of 60)
+            if frame_number%number_frame_duration == 0:
+                # Genera la secuencia de bits para cada región luminosa
+                bit_sequences = [generate_frame_bits() for i in range(len(tx_centers))]
+                frame_number_bit_count = 0
+                print(bit_sequences)           
+        
+            # Calculate the bit to represent
+            bit = int(frame_number_bit_count//number_bit_duration)
+
+            # Represent bit in the image in different regions
+            for i, center in enumerate(tx_centers):
+                modulate_image(frame, center, radius[i], bit_sequences[i][bit], energy[i])
+            
+            # Store frame
+            frame_filename = f'data/{i}/frame_{frame_number}.jpg'
+            cv2.imwrite(frame_filename, frame)
+            
+            # Create YoLo - format txt file
+            txt_filename = f'data/{i}/frame_{frame_number}.txt'
+            create_YoLo_file(tx_centers, radius, frame_width, frame_height, txt_filename)
+
+            # Write the frame to the ouput video
+            out.write(frame)
+            frame_number += 1
+            frame_number_bit_count += 1
+
+        # Release objects
+        cap.release()
+        out.release()
+        
 
 if __name__ == "__main__":
     main()
