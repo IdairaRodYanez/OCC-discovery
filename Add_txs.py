@@ -203,13 +203,15 @@ def create_YoLo_file(transmitters, radius, width, height, output_file):
             box_height = radius[i] / height  # Normalizing box height
             file.write(f"0 {x_center:.6f} {y_center:.6f} {box_width:.6f} {box_height:.6f}\n")
 
-def store_pixels(transmitters, non_transmitters, output_file):
+def store_pixels(transmitters, non_transmitters, fps, output_file):
     """
     Store pixels positions of selected transmitters and non transmitters
     
     Args:
         transmitters (np.array): List of (x,y) coordinates of selected transmitters.
         non_transmitters (np.array): List of (x,y) coordinates of selected non transmitters.
+        fps (float): Frames per second of the video
+        output_file (str): The name of the output file to store the data.
 
     Returns:
         None
@@ -219,6 +221,7 @@ def store_pixels(transmitters, non_transmitters, output_file):
             file.write(f"T, {coordinates[0]}, {coordinates[1]}\n")
         for coordinates in non_transmitters:
             file.write(f"NT, {coordinates[0]}, {coordinates[1]}\n")
+        file.write(f"FPS, {fps}\n")
 
 
 
@@ -272,7 +275,7 @@ def main():
             # If it's the first frame of the video, collect information
             if not info_collected:
                 tx_centers, radius, energy, non_tx_centers = get_info(frame)
-                store_pixels(tx_centers, non_tx_centers, f'data/{i}/pixels.txt')
+                store_pixels(tx_centers, non_tx_centers, fps, f'data/{i}/pixels.txt')
                 info_collected = True
 
             # If a frame has already been represented (frame number multiple of 60)
