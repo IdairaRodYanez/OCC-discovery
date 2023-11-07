@@ -1,7 +1,7 @@
 """
 Extract Frames from Videos Script
 
-This script is used to all the images from each video of the dataset and store them without modifications.
+This script is used to extract all the images from each video of the dataset and store them without modifications.
 """
 
 import cv2
