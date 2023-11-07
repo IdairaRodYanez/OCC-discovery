@@ -146,22 +146,8 @@ def get_info(frame):
         if not x:
             break
         energy.append(int(x))
-    
-    ##########################  SELECT NO TX CENTERS ####################################
-    print("Select non-transmitter points. Press Enter to finish.")
-    img = frame.copy()
-    cv2.imshow("Image", img)
-    cv2.waitKey(0)
-    cv2.destroyWindow("Image")
 
-    while True:
-        x = input("Enter the x-coordinate of a non-transmitter (or press Enter to finish): ")
-        if not x:
-            break
-        y = input("Enter the y-coordinate of the corresponding non-transmitter: ")
-        non_tx_centers.append([int(x), int(y)])
-
-    return tx_centers, radius, energy, non_tx_centers
+    return tx_centers, radius, energy
 
 def click_event(event, x, y, flags, param):
     """
@@ -203,7 +189,7 @@ def create_YoLo_file(transmitters, radius, width, height, output_file):
             box_height = radius[i] / height  # Normalizing box height
             file.write(f"0 {x_center:.6f} {y_center:.6f} {box_width:.6f} {box_height:.6f}\n")
 
-def store_pixels(transmitters, non_transmitters, fps, output_file):
+def store_pixels(transmitters, fps, output_file):
     """
     Store pixels positions of selected transmitters and non transmitters
     
@@ -219,8 +205,6 @@ def store_pixels(transmitters, non_transmitters, fps, output_file):
     with open(output_file, 'w') as file:
         for coordinates in transmitters:
             file.write(f"T, {coordinates[0]}, {coordinates[1]}\n")
-        for coordinates in non_transmitters:
-            file.write(f"NT, {coordinates[0]}, {coordinates[1]}\n")
         file.write(f"FPS, {fps}\n")
 
 
@@ -274,8 +258,8 @@ def main():
             
             # If it's the first frame of the video, collect information
             if not info_collected:
-                tx_centers, radius, energy, non_tx_centers = get_info(frame)
-                store_pixels(tx_centers, non_tx_centers, fps, f'data/{i}/pixels.txt')
+                tx_centers, radius, energy = get_info(frame)
+                store_pixels(tx_centers, fps, f'data/{i}/info.txt')
                 info_collected = True
 
             # If a frame has already been represented (frame number multiple of 60)
