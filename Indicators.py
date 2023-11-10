@@ -8,7 +8,7 @@ All the functions should receive a chunk of size LxNxM and return just a 2D tens
 the time-dimension in order to feed the result to a discovery algorithm.
 """
 import numpy as np
-from scipy.stats import kurtosis, skew
+from scipy.stats import skew as sk, kurtosis as ku
 
 def mean (array):
     """
@@ -97,34 +97,7 @@ def max_peek_dif(array):
     """
     return (np.max(array, axis=0) - np.min(array, axis=0))
 
-def SNR(array):
-    """
-    Calculate the Signal-to-Noise Ratio (SNR) of optical signals for multiple pixels.
 
-    Args:
-        array (np.ndarray): A NumPy array of shape (T, N, M) representing the sequence of images. 
-        T represents temportal axis.
-
-    Returns:
-        np.ndarray: A 2D array of shape (M, 1), containing the SNR of optical signals for each pixel.
-    """
-    # Calculate the SNR for each pixel
-    num_pixels = array.shape[2]  # Get the number of pixels (M)
-    snr_values = np.zeros((num_pixels, 1), dtype=np.float32)
-
-    for pixel_idx in range(num_pixels):
-        # Extract the pixel's data over time
-        pixel_data = array[:, :, pixel_idx]
-        
-        # Calculate the mean signal and the standard deviation of noise
-        mean_signal = np.mean(pixel_data, axis=0)
-        noise = pixel_data - mean_signal
-        std_noise = np.std(noise, axis=0)
-        
-        # Calculate SNR for the pixel
-        snr_values[pixel_idx, 0] = np.mean(mean_signal) / np.mean(std_noise)
-
-    return snr_values
 
 
 def kurtosis(array):
@@ -138,9 +111,9 @@ def kurtosis(array):
     Returns:
         np.ndarray: A 2D array of shape (M, 1) containing the kurtosis values.
     """
-    kurtosis = kurtosis(array, axis=0) 
+    curtosis = ku(array, axis=0) 
 
-    return kurtosis
+    return curtosis
 
 def skewness(array):
     """
@@ -153,7 +126,7 @@ def skewness(array):
     Returns:
         np.ndarray: A 2D array of shape (M, 1) containing the skewness values.
     """
-    skewness = skew(array, axis=0)
+    skewness = sk(array, axis=0)
 
     return skewness
 
@@ -172,7 +145,7 @@ def norme(array):
     
     return norm_values
 
-def percentil(array, percentil):
+def percentil(array):
     """
     Calculate the specified percentile of optical signals for multiple pixels.
 
@@ -184,7 +157,7 @@ def percentil(array, percentil):
         np.ndarray: A 2D array of shape (M, 1) containing the percentil values of the vectors.
     """
     
-    percentile_values = np.percentile(array, percentil, axis=0)
+    percentile_values = np.percentile(array, 75, axis=0)
 
     return percentile_values
     

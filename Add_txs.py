@@ -20,6 +20,7 @@ import os
 
 bit_duration = 0.13333  # Duración de un bit en segundos
 frame_duration = 2  # Duración de una trama en segundos
+points = []
 
 
 def generate_frame_bits():
@@ -89,39 +90,19 @@ def modulate_image(frame, center, radius, bit, energy):
     """
    if bit == 1:       
         centro_x, centro_y = center
-        energy = np.random.uniform(energy - 3, energy + 3)
+        energy *= 1 - 0.05 + 0.1*np.random.rand() # 5% variation
         mask=  np.array(energy*create_mask(radius, 
                                            radius/np.sqrt(2*np.log(radius))))[..., np.newaxis].repeat(3, axis=2)
-        color_contributions = np.array([0.6, 0.6, 0.5]) # B G R
-        result = (mask * color_contributions).astype(np.uint8)      
-        frame[centro_x-radius:centro_x+radius + 1, centro_y-radius:centro_y + radius + 1, :] += result
+        color_contributions = np.array([0.4, 0.8, 0.3]) # B G R
+        result = (mask * color_contributions).astype(np.uint8) 
+        frame[centro_y-radius:centro_y+radius + 1, centro_x-radius:centro_x + radius + 1, :] += result
 
 def get_info(frame):
-    """
-    Obtains the necessary information to locate the transmitters: pixels, radius, and luminous intensity.
-    Also gets the position of points not associated to transmitters that are desired to be stored for further study.
-    
-    Args:
-        frame (np.array): Image to display for selecting transmitters.
-
-    Returns:
-        tx_centers (np.array): Numpy array containing pairs (x, y) associated with the transmitter locations.
-        radius (np.array): Numpy array of integers indicating the luminous radius of each of the transmitters.
-        energy (np.array): Numpy array containing integers associated with the luminous increment contributed by
-        the transmitter to the image.
-        non_tx_centers (np.array): Numpy array containing pairs (x, y) associated with the locations of the
-        non-transmitters to be studied in post-processing.
-    """
-    tx_centers = []
-    radius = []
-    energy = []
-    non_tx_centers = []
-    
-    ##########################  SELECT TX CENTERS ####################################
     print("Select transmitter points on the image by clicking. Press Enter to finish.")
     img = frame.copy()
     cv2.imshow("Image", img)
 
+    global points
     points = []
     cv2.setMouseCallback("Image", click_event)
 
@@ -132,17 +113,18 @@ def get_info(frame):
 
     cv2.destroyWindow("Image")
     tx_centers = np.array(points)
-    
-    ##########################  SELECT TX RADIUS ####################################
-    for _ in tx_centers:
-        x = input("Enter the radius for the next transmitter (or press Enter to finish): ")
+
+    radius = []
+    energy = []
+
+    for center in tx_centers:
+        x = input(f"Enter the radius for the transmitter at {center} (or press Enter to finish): ")
         if not x:
             break
         radius.append(int(x))
 
-    ##########################  SELECT TX ENERGY ####################################
-    for _ in tx_centers:
-        x = input("Enter the energy value for the next transmitter (or press Enter to finish): ")
+    for center in tx_centers:
+        x = input(f"Enter the energy value for the transmitter at {center} (or press Enter to finish): ")
         if not x:
             break
         energy.append(int(x))
@@ -163,7 +145,6 @@ def click_event(event, x, y, flags, param):
     Returns:
         None
     """
-    global points
     if event == cv2.EVENT_LBUTTONDOWN:
         points.append([x, y])  
    
@@ -221,77 +202,86 @@ def main():
     the images to represent those data frames in the specified positions and sizes.
     """
     # Loop through directories
-    for i in range(1, 20):
+    for i in range(1, 4):
         input_path = f'data/{i}' 
-        input_video_file = os.path.join(input_path, 'video.mp4')
-        
-        # Open the video file
-        cap = cv2.VideoCapture(input_video_file)
-        
-        # Get video properties
-        frame_width = int(cap.get(3))
-        frame_height = int(cap.get(4))
-        total_video_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-
-        # Create VideoWriter object for saving the output video
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        output_path = f'data/{i}/out_video.mp4' 
-        out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
-
-        # Calculate the number of frames per bit and frame duration
-        number_bit_duration = round(bit_duration/(1/fps))
-        number_frame_duration = round(frame_duration/(1/fps))
-
-        # Initialize flag to display the message only once
-        info_collected = False
-
-        # Control parameters for progress
-        frame_number = 0
-        frame_number_bit_count = 0
-
-        while frame_number < total_video_frames:
-            # Extract frames from the video
-            ret, frame = cap.read()
-            if not ret:
-                break
+        try: 
+            input_video_file = os.path.join(input_path, 'video.mp4')
             
-            # If it's the first frame of the video, collect information
-            if not info_collected:
-                tx_centers, radius, energy = get_info(frame)
-                store_pixels(tx_centers, fps, f'data/{i}/info.txt')
-                info_collected = True
-
-            # If a frame has already been represented (frame number multiple of 60)
-            if frame_number%number_frame_duration == 0:
-                # Genera la secuencia de bits para cada región luminosa
-                bit_sequences = [generate_frame_bits() for i in range(len(tx_centers))]
-                frame_number_bit_count = 0
-                print(bit_sequences)           
-        
-            # Calculate the bit to represent
-            bit = int(frame_number_bit_count//number_bit_duration)
-
-            # Represent bit in the image in different regions
-            for i, center in enumerate(tx_centers):
-                modulate_image(frame, center, radius[i], bit_sequences[i][bit], energy[i])
+            # Open the video file
+            cap = cv2.VideoCapture(input_video_file)
             
-            # Store frame
-            frame_filename = f'data/{i}/frame_{frame_number}.jpg'
-            cv2.imwrite(frame_filename, frame)
+            # Get video properties
+            frame_width = int(cap.get(3))
+            frame_height = int(cap.get(4))
+            total_video_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+
+            # Create VideoWriter object for saving the output video
+            fourcc = cv2.VideoWriter_fourcc(*'XVID')
+            output_path = f'data/{i}/tx/out_video.mp4' 
+            out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
+
+            # Calculate the number of frames per bit and frame duration
+            number_bit_duration = (bit_duration/(1/fps))
+            number_frame_duration = (frame_duration/(1/fps))
+
+            # Initialize flag to display the message only once
+            info_collected = False
+
+            # Control parameters for progress
+            frame_number = 0
+            frame_number_bit_count = 0
+
+            while frame_number < total_video_frames:
+                # Extract frames from the video
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                # If it's the first frame of the video, collect information
+                if not info_collected:
+                    tx_centers, radius, energy = get_info(frame)
+                    store_pixels(tx_centers, fps, f'data/{i}/info.txt')
+                    print("info stored")
+                    print(tx_centers)
+                    print(radius)
+                    print(energy)
+                    info_collected = True
+
+                # If a frame has already been represented (frame number multiple of 60)
+                if frame_number%number_frame_duration == 0:
+                    # Genera la secuencia de bits para cada región luminosa
+                    bit_sequences = [generate_frame_bits() for i in range(len(tx_centers))]
+                    frame_number_bit_count = 0
+
             
-            # Create YoLo - format txt file
-            txt_filename = f'data/{i}/frame_{frame_number}.txt'
-            create_YoLo_file(tx_centers, radius, frame_width, frame_height, txt_filename)
+                # Calculate the bit to represent
+                bit = round(frame_number_bit_count//number_bit_duration)
+ 
 
-            # Write the frame to the ouput video
-            out.write(frame)
-            frame_number += 1
-            frame_number_bit_count += 1
+                # Represent bit in the image in different regions
+                for j, center in enumerate(tx_centers):
+                    modulate_image(frame, center, radius[j], bit_sequences[j][bit], energy[j])
+                
+                # Store frame
+                frame_filename = f'data/{i}/tx/frame_{frame_number}.jpg'
+                cv2.imwrite(frame_filename, frame)
+                
+                # Create YoLo - format txt file
+                txt_filename = f'data/{i}/tx/frame_{frame_number}.txt'
+                create_YoLo_file(tx_centers, radius, frame_width, frame_height, txt_filename)
 
-        # Release objects
-        cap.release()
-        out.release()
+                # Write the frame to the ouput video
+                out.write(frame)
+                frame_number += 1
+                frame_number_bit_count += 1
+
+            # Release objects
+            print("released")
+            cap.release()
+            out.release()
+        except (FileNotFoundError, ZeroDivisionError):
+            print(f'video {i} no existe')
         
 
 if __name__ == "__main__":

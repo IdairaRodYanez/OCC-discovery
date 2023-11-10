@@ -14,11 +14,13 @@ import numpy as np
 import pandas as pd
 import cv2 as cv
 from scipy.stats import kurtosis, skew
+import math
 import time
 import csv
 import os
 import inspect
 import Indicators
+import pickle
 
 
 def get_init_df(module, file):  
@@ -45,10 +47,12 @@ def get_init_df(module, file):
         for name in funtions:
             df[name] = []
         
-        df['clase'] = []
+        df['class'] = []
+        print("file created")
     else:
-        # Read CSV file as DataFrame
-        df = pd.read_csv(file)
+        # Read pickle file as DataFrame
+        df = pd.read_pickle(file)
+        print("file reload")
 
     return df   
 
@@ -66,21 +70,19 @@ def extract_info(txt_file_directory):
         fps (float): Frames per second of the video.
     """
     transmitters = []
-    non_transmitters = []
     fps = None
     
     with open(txt_file_directory, 'r') as file:
+        # Read line by line
         for line in file:
+            # Divide line in parts based on ,
             parts = line.strip().split(', ')
-            if len(parts) == 3:
-                if parts[0] == "T":
+            if parts[0] == "T":
                     transmitters.append((int(parts[1]), int(parts[2])))
-                elif parts[0] == "NT":
-                    non_transmitters.append((int(parts[1]), int(parts[2])))
-                elif parts[0] == "FPS":
+            elif parts[0] == "FPS":
                     fps = float(parts[1])
     
-    return transmitters, non_transmitters, fps
+    return transmitters, fps
 
 def prepare_opticals_signals(images, pixels, fps):
     """
@@ -121,32 +123,30 @@ def calculate_all(df, array, case):
     members = inspect.getmembers(Indicators)
 
     # Filter only functions
-    funtions = [name for name, object in members if inspect.isfunction(object)]
+    functions = [(name, obj) for name, obj in members if inspect.isfunction(obj) and obj.__module__ == Indicators.__name__]
 
     # Create a temporary DataFrame to store new data
     new_data = pd.DataFrame()
+    
     # Create times dictionary
     times = {}
 
     # Execute the function and assign the result to the corresponding column
-    for function in funtions:
-        # Get function name
-        function_name = function.__name__
+    for function_name, function_callable in functions:
+
         # Excute function and assign result
         time_i = time.time()
         # Get columns length
-        result = function(array).ravel()
+        result = function_callable(np.array(array)).ravel()
         num_elements = result.size
+
+        # Get processing time
+        time_funtion =  time.time() - time_i
         # Assign result to column
         new_data[function_name] = result
 
-        time_f = time.time()
-        # Get processing time
-        time_funtion = time_f - time_i
-
         # Store times values in a dictionary
         times[function_name] = [time_funtion]  
-
     
     # Add a 'class' column
     class_array = np.full(num_elements, case)
@@ -154,6 +154,12 @@ def calculate_all(df, array, case):
 
     # Concatenate the temporary DataFrame with the main DataFrame
     df = pd.concat([df, new_data], ignore_index=True)
+
+    columns_to_drop = ['ku', 'sk']
+    columns_exist = all(col in df.columns for col in columns_to_drop)
+
+    if columns_exist:
+        df = df.drop(columns=columns_to_drop)
     
     return df, times
    
@@ -173,60 +179,59 @@ def main():
 
     Store the information in a CSV file.
     """
-    CSV_name = "DataAnalisis.csv"
-    # Create initial DataFrame with empty columns
-    df = get_init_df(Indicators, CSV_name)
 
     ######################################## CHANGE ONLY THIS ##############################################
     case = "tx" # tx or notx (group of images that are being analyzed) 
     ######################################## CHANGE ONLY THIS ##############################################
-
-    # Loop through directories
-    for i in range(1, 20):
-        transmitters, fps = extract_info(f"data/{i}/{case}/info.txt")
-        images = []
-        
-        # Random init image for each directory (videos always start with the header of the data frame)
-        init = np.random(0, 2*fps) 
-        # Extract and convert all images in a data frame to grayscale
-        for count in range(init, init + 2*fps + 1, int(fps/15)): # 2 images per bit
-          image = cv.imread("data/{i}/%s/frame%d.jpg" % (case, count))
-          gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)                     
-          images.append(gray) 
-        
-        if case == "tx":
-            # Get optical signals of interest
-            tx_array = prepare_opticals_signals(images, transmitters, fps)
-
-            # Calculate parameters
-            df, times = calculate_all(tx_array, "T")
-        elif case == "notx":
-            # Calculate parameters
-            df, times = calculate_all(images, "NT")
-
     
-    # Save the DataFrame to a CSV file
-    df.to_csv(CSV_name, index=False)  
-    # Save times dictionary to a CSV file
-    with open('times.csv', 'w', newline='') as csvfile:
-        csvwriter = csv.writer(csvfile)
-        for key, value in times.items():
-            csvwriter.writerow([key, value])
+    # Loop through directories
+    for i in range(1, 2):
+        try:
+            # Get info of fps and transmitters positions
+            transmitters, fps = extract_info(f"data/{i}/info.txt")
+            print(transmitters)
+            images = []
 
+            # A pkl file for each video (includes tx and non tx info)
+            pkl_name = f"data/{i}/DataColletion.pkl"
+            # Create initial DataFrame with empty columns or reload the one stored
+            df = get_init_df(Indicators, pkl_name)
+
+            # Random init image for each directory (videos always start with the header of the data frame)
+            init = int(np.random.randint(0, 2 * fps))
+            steps = int(math.trunc(fps/15))
+            end = int(init + 2*fps + 1)
+            # Extract and convert all images in a data frame to grayscale
+            for count in range(init, end, steps): # max 2 images per bit
+                image = cv.imread("data/%d/%s/frame_%d.jpg" % (i,case, count))
+                gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)                     
+                images.append(gray) 
+            
+            if case == "tx":
+                # Get optical signals of interest
+                tx_array = prepare_opticals_signals(images, transmitters, fps)
+
+                # Calculate parameters
+                df, times = calculate_all(df, tx_array, "T") 
+
+            elif case == "notx":
+                # Calculate parameters
+                df, times = calculate_all(df, images, "NT")
+
+                # Save times dictionary to a txt file
+                with open(f"data/{i}/times.txt", 'w', newline='') as csvfile:
+                    csvwriter = csv.writer(csvfile)
+                    for key, value in times.items():
+                        csvwriter.writerow([key, value])
+            
+            print(df)          
+            # Save the DataFrames to a pkl file
+            df.to_pickle(pkl_name)
+
+            
+        except (FileNotFoundError, ZeroDivisionError):
+            print(f'video {i} no existe')
+    
 
 if __name__ == "__main__":
     main()
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
